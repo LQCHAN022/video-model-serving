@@ -1,0 +1,27 @@
+services:
+  model-server:
+    build: ./model-server
+    ports: ["8001:8001"]
+    environment:
+      MAX_BATCH: "8"
+      MAX_WAIT_MS: "5"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  gateway:
+    build: ./gateway
+    ports: ["8090:8000"]
+    environment:
+      MODEL_SERVER_URL: http://model-server:8001
+    depends_on: [model-server]
+
+  # Demo multicast source on the compose network (udp://239.255.0.1:5000).
+  # Run more copies with different MCAST_URLs to demo several streams.
+  streamer:
+    build: ./streamer
+    volumes: ["./streamer/media:/media:ro"]

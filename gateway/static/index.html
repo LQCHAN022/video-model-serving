@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Video Model Serving Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input { flex: 1; padding: 8px; font-family: monospace; }
+    button { padding: 8px 14px; cursor: pointer; }
+    #streams { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
+    .panel { background: #222; padding: 8px; border-radius: 6px; }
+    .panel header { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+    .panel header code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    canvas { width: 100%; background: #000; margin-top: 6px; display: block; }
+    .stats { font: 12px monospace; color: #9c9; margin-top: 4px; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <h2>YOLO stream inference</h2>
+  <form id="add">
+    <input id="url" value="udp://239.255.0.1:5000" placeholder="udp://239.x.x.x:port, rtsp://..., http://...mp4">
+    <button>Add stream</button>
+  </form>
+  <div id="streams"></div>
+
+<script>
+const colorFor = label => `hsl(${[...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0)} 90% 55%)`;
+
+function addStream(url) {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.innerHTML = `<header><code></code><button>✕</button></header><canvas></canvas><div class="stats">connecting…</div>`;
+  panel.querySelector("code").textContent = url;
+  document.getElementById("streams").append(panel);
+  const canvas = panel.querySelector("canvas"), ctx = canvas.getContext("2d");
+  const stats = panel.querySelector(".stats");
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws?url=${encodeURIComponent(url)}`);
+  ws.binaryType = "blob";
+  panel.querySelector("button").onclick = () => { ws.close(); panel.remove(); };
+  ws.onclose = () => { stats.textContent = "disconnected"; };
+
+  let meta = null, frames = 0, fps = 0, t0 = performance.now();
+  ws.onmessage = async (ev) => {
+    if (typeof ev.data === "string") {  // detections (or a status update) for the next frame
+      const msg = JSON.parse(ev.data);
+      if (msg.status) stats.textContent = msg.status; else meta = msg;
+      return;
+    }
+    const img = await createImageBitmap(ev.data);
+    canvas.width = img.width; canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    ctx.lineWidth = 2; ctx.font = "14px sans-serif";
+    for (const d of meta.detections) {
+      const [x1, y1, x2, y2] = d.box, text = `${d.label} ${d.conf.toFixed(2)}`;
+      ctx.strokeStyle = ctx.fillStyle = colorFor(d.label);
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.fillRect(x1, y1 - 18, ctx.measureText(text).width + 6, 18);
+      ctx.fillStyle = "#000"; ctx.fillText(text, x1 + 3, y1 - 4);
+    }
+    frames++;
+    if (performance.now() - t0 > 1000) { fps = frames * 1000 / (performance.now() - t0); frames = 0; t0 = performance.now(); }
+    stats.textContent = `${fps.toFixed(1)} fps | ${meta.detections.length} objects | infer ${meta.infer_ms} ms (batch ${meta.batch_size}) | roundtrip ${meta.roundtrip_ms} ms`;
+  };
+}
+
+document.getElementById("add").onsubmit = (e) => {
+  e.preventDefault();
+  const url = document.getElementById("url").value.trim();
+  if (url) addStream(url);
+};
+</script>
+</body>
+</html>
