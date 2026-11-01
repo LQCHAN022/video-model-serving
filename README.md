@@ -1,5 +1,18 @@
 # Video Model Serving Demo
 
+## Author's notes
+The purpose of this repo is to showcase how models are served for video stream inference. 
+
+There are three services:
+1. Gateway: Frontend webui/video decoder, takes an external stream, and sends a frame to the model for inference, then burns the result of that into the frame sent and display it. So this means that if the model inference is slow, then fps will drop as well relative to the original stream. 
+
+2. Model Server: Serves the model, pretty straightforward. Endpoint basically takes a picture and outputs the corresponding detections.
+
+3. Streamer: Simulates a stream/video source for the gateway to take from.
+
+> AI disclaimer: Claude is used for the development of this demo. 
+
+
 A minimal example of serving a YOLO model on live video streams (UDP multicast, RTSP, HTTP, files).
 
 ```
